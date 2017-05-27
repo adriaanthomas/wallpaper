@@ -2,8 +2,15 @@
 
 package wallpaper
 
-import "golang.org/x/sys/windows/registry"
-import "os"
+import (
+	"os"
+
+	"fmt"
+	"syscall"
+	"unsafe"
+
+	"golang.org/x/sys/windows/registry"
+)
 
 // Get gets the current wallpaper.
 func Get() (wallpaper string, err error) {
@@ -30,30 +37,7 @@ func Get() (wallpaper string, err error) {
 //
 // Note: this requires you to log out and in again.
 func SetFromFile(file string) (err error) {
-	key, err := registry.OpenKey(registry.CURRENT_USER, `Control Panel\Desktop`, registry.WRITE)
-
-	if err != nil {
-		return
-	}
-
-	defer func() {
-		err = key.Close()
-	}()
-
-	err = key.SetStringValue("Wallpaper", file)
-
-	if err != nil {
-		return
-	}
-
-	// this is supposed to update the wallpaper, but i only got a black background
-	// err = exec.
-	//   Command("rundll32", "user32.dll,UpdatePerUserSystemParameters").
-	//   Run()
-	//
-	// if err != nil {
-	//   return
-	// }
+	systemParametersInfo(spiSetDeskWallPaper, 0, file, spifUpdateIniFile|spifSendWinIniChange)
 
 	return
 }
@@ -71,4 +55,26 @@ func SetFromURL(url string) error {
 
 func getCacheDir() (string, error) {
 	return os.TempDir(), nil
+}
+
+var (
+	user32                   = syscall.NewLazyDLL("user32.dll")
+	systemParametersInfoProc = user32.NewProc("SystemParametersInfoW")
+)
+
+const (
+	spiSetDeskWallPaper = 0x0014
+
+	spifUpdateIniFile    = 0x01
+	spifSendWinIniChange = 0x02
+)
+
+func systemParametersInfo(uiAction uint, uiParam uint, pvParam string, fWinIni uint) (err error) {
+	r1, r2, err := systemParametersInfoProc.Call(
+		uintptr(uiAction),
+		uintptr(uiParam),
+		uintptr(unsafe.Pointer(syscall.StringToUTF16Ptr(pvParam))),
+		uintptr(fWinIni))
+	fmt.Printf("%v, %v, %v\n", r1, r2, err)
+	return
 }
